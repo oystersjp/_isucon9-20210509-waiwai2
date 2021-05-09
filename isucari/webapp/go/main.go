@@ -322,6 +322,7 @@ func main() {
 
 	mux := goji.NewMux()
 
+	setCategories()
 	// API
 	mux.HandleFunc(pat.Post("/initialize"), postInitialize)
 	mux.HandleFunc(pat.Get("/new_items.json"), getNewItems)
@@ -406,18 +407,6 @@ func getUserSimpleByID(q sqlx.Queryer, userID int64) (userSimple UserSimple, err
 	userSimple.AccountName = user.AccountName
 	userSimple.NumSellItems = user.NumSellItems
 	return userSimple, err
-}
-
-func getCategoryByID(q sqlx.Queryer, categoryID int) (category Category, err error) {
-	err = sqlx.Get(q, &category, "SELECT * FROM `categories` WHERE `id` = ?", categoryID)
-	if category.ParentID != 0 {
-		parentCategory, err := getCategoryByID(q, category.ParentID)
-		if err != nil {
-			return category, err
-		}
-		category.ParentCategoryName = parentCategory.CategoryName
-	}
-	return category, err
 }
 
 func getConfigByName(name string) (string, error) {
@@ -613,13 +602,7 @@ func getNewCategoryItems(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var categoryIDs []int
-	err = dbx.Select(&categoryIDs, "SELECT id FROM `categories` WHERE parent_id=?", rootCategory.ID)
-	if err != nil {
-		log.Print(err)
-		outputErrorMsg(w, http.StatusInternalServerError, "db error")
-		return
-	}
+	categoryIDs := getChildCategories(rootCategory.ID)
 
 	query := r.URL.Query()
 	itemIDStr := query.Get("item_id")
@@ -2196,15 +2179,7 @@ func getSettings(w http.ResponseWriter, r *http.Request) {
 
 	ress.PaymentServiceURL = getPaymentServiceURL()
 
-	categories := []Category{}
-
-	err := dbx.Select(&categories, "SELECT * FROM `categories`")
-	if err != nil {
-		log.Print(err)
-		outputErrorMsg(w, http.StatusInternalServerError, "db error")
-		return
-	}
-	ress.Categories = categories
+	ress.Categories = getAllCategories()
 
 	w.Header().Set("Content-Type", "application/json;charset=utf-8")
 	json.NewEncoder(w).Encode(ress)
