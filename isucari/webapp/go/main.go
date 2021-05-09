@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	crand "crypto/rand"
 	"database/sql"
 	"encoding/json"
@@ -557,7 +558,7 @@ func getNewItems(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var s []User
-		err = dbx.SelectContext(r.Context(), &s, query, args...)
+		err = dbx.SelectContext(context.Background(), &s, query, args...)
 		if err != nil {
 			log.Print(err)
 			outputErrorMsg(w, http.StatusInternalServerError, "db error")
@@ -720,7 +721,7 @@ func getNewCategoryItems(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var s []User
-		err = dbx.SelectContext(r.Context(), &s, query, args...)
+		err = dbx.SelectContext(context.Background(), &s, query, args...)
 		if err != nil {
 			log.Print(err)
 			outputErrorMsg(w, http.StatusInternalServerError, "db error")
@@ -922,7 +923,7 @@ func getTransactions(w http.ResponseWriter, r *http.Request) {
 	items := []Item{}
 	if itemID > 0 && createdAt > 0 {
 		// paging
-		err := tx.Select(&items,
+		err := tx.SelectContext(context.Background(), &items,
 			"SELECT * FROM `items` WHERE (`seller_id` = ? OR `buyer_id` = ?) AND `status` IN (?,?,?,?,?) AND (`created_at` < ?  OR (`created_at` <= ? AND `id` < ?)) ORDER BY `created_at` DESC, `id` DESC LIMIT ?",
 			user.ID,
 			user.ID,
@@ -944,7 +945,7 @@ func getTransactions(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		// 1st page
-		err := tx.Select(&items,
+		err := tx.SelectContext(context.Background(), &items,
 			"SELECT * FROM (SELECT * FROM `items` WHERE `seller_id` = ? AND `status` IN ('on_sale','trading','sold_out','cancel','stop') UNION SELECT * FROM `items` WHERE `buyer_id` = ? AND `status` IN ('on_sale','trading','sold_out','cancel','stop')) t ORDER BY `created_at` DESC, `id` DESC LIMIT ?",
 			user.ID,
 			user.ID,
@@ -961,7 +962,7 @@ func getTransactions(w http.ResponseWriter, r *http.Request) {
 	itemIDs := make([]interface{}, 0, len(items))
 	userIdUnique := make(map[int64]struct{})
 	var userIds []interface{}
-	for _,i := range items {
+	for _, i := range items {
 		itemIDs = append(itemIDs, i.ID)
 		id := i.SellerID
 		if _, ok := userIdUnique[id]; !ok {
@@ -974,11 +975,9 @@ func getTransactions(w http.ResponseWriter, r *http.Request) {
 			userIdUnique[id] = struct{}{}
 		}
 	}
-
-	// ユーザーを取得
 	var users map[int64]UserSimple
 	if len(userIds) > 0 {
-		query, args, err := sqlx.In("SELECT * FROM users WHERE id IN (?)", userIds)
+		query, args, err := sqlx.In("SELECT * FROM `users` WHERE `id` IN (?)", userIds)
 		if err != nil {
 			log.Print(err)
 			outputErrorMsg(w, http.StatusInternalServerError, "db error")
@@ -986,7 +985,7 @@ func getTransactions(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var s []User
-		err = tx.SelectContext(r.Context(), &s, query, args...)
+		err = tx.SelectContext(context.Background(), &s, query, args...)
 		if err != nil {
 			log.Print(err)
 			outputErrorMsg(w, http.StatusInternalServerError, "db error")
@@ -1002,7 +1001,6 @@ func getTransactions(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-
 	var transactionEvidences map[int64]TransactionEvidence
 	if len(itemIDs) > 0 {
 		query, args, err := sqlx.In("SELECT c.item_id AS item_id, c.status AS status, s.status AS shipping_status FROM `transaction_evidences` c LEFT JOIN shippings s ON s.transaction_evidence_id = c.id WHERE c.`item_id` IN (?) ", itemIDs)
@@ -1013,7 +1011,7 @@ func getTransactions(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var s []TransactionEvidence
-		err = tx.SelectContext(r.Context(), &s, query, args...)
+		err = tx.SelectContext(context.Background(), &s, query, args...)
 		if err != nil {
 			log.Print(err)
 			outputErrorMsg(w, http.StatusInternalServerError, "db error")
@@ -1034,9 +1032,8 @@ func getTransactions(w http.ResponseWriter, r *http.Request) {
 			tx.Rollback()
 			return
 		}
-
-		category, err := getCategoryByID(tx, item.CategoryID)
-		if err != nil {
+		category, ok := categoryByID[item.CategoryID]
+		if !ok {
 			outputErrorMsg(w, http.StatusNotFound, "category not found")
 			tx.Rollback()
 			return
@@ -1050,6 +1047,7 @@ func getTransactions(w http.ResponseWriter, r *http.Request) {
 			// Buyer
 			Status: item.Status,
 			Name:   item.Name,
+
 			Price:       item.Price,
 			Description: item.Description,
 			ImageURL:    getImageURL(item.ImageName),
@@ -1104,6 +1102,7 @@ func getTransactions(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(rts)
 
 }
+
 
 func getItem(w http.ResponseWriter, r *http.Request) {
 	itemIDStr := pat.Param(r, "item_id")
