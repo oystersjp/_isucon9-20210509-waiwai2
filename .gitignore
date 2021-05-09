@@ -18,3 +18,6 @@ isucari/webapp/public/
 isucari/webapp/python/
 local/
 xbuild/
+.mysql_history
+.vim/
+snap/
