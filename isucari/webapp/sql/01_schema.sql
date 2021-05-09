@@ -33,7 +33,7 @@ CREATE TABLE `items` (
   INDEX idx_category_id (`category_id`)
 ) ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4;
 
-ALTER TABLE items ADD index idx_status_created_at (`status`, `created_at`)
+ALTER TABLE items ADD index idx_status_created_at (`status`, `created_at`);
 
 DROP TABLE IF EXISTS `transaction_evidences`;
 CREATE TABLE `transaction_evidences` (
